@@ -1,0 +1,83 @@
+# ------------------------------
+# Qt Creator user/local files
+# ------------------------------
+*.pro.user
+*.pro.user.*
+*.pri.user
+*.qbs.user
+*.qmlproject.user
+*.creator
+*.creator.user
+*.creator.user.*
+*.files
+*.includes
+*.config
+
+# ------------------------------
+# Build directories and artifacts
+# ------------------------------
+build/
+build-*/
+cmake-build-*/
+debug/
+release/
+
+# CMake / qmake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+Makefile
+install_manifest.txt
+*_autogen/
+.autogen/
+
+# ------------------------------
+# Qt auto-generated sources
+# ------------------------------
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*.moc
+
+# ------------------------------
+# Generic C/C++ binaries/objects
+# ------------------------------
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+*.pdb
+*.ilk
+
+# ------------------------------
+# Logs and temporary files
+# ------------------------------
+*.log
+*.tmp
+*.cache
+
+# 忽略本地配置（个人环境）
+.claude/settings.local.json
+
+# 忽略缓存和日志
+.claude/cache/
+.claude/logs/
+
+# 可选：忽略临时文件
+.claude/tmp/
+
+# ------------------------------
+# OS-specific
+# ------------------------------
+.DS_Store
+Thumbs.db
+
