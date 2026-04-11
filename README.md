@@ -94,34 +94,61 @@ LanCast/
 
 | 依赖 | 版本 | 用途 |
 |------|------|------|
-| **Qt** | 5.15+ / 6.x | GUI、Network 模块 |
-| **FFmpeg** | 4.x+ | libavcodec (H.264 编解码) |
+| **Qt** | 6.11.0 | GUI、Network 模块 |
+| **FFmpeg** | 6.x (BtbN) | libavcodec (H.264 编解码) |
+| **MinGW GCC** | 13.1 | 编译器 |
 | **Windows SDK** | 10.0+ | DXGI Desktop Duplication |
 
 ## 构建
 
-### CMake (推荐)
+### 环境要求
+
+- Qt 6.11.0 (已测试)
+- CMake 3.16+
+- MinGW GCC 13.1+ (Qt 自带工具链)
+- FFmpeg (WinGet 安装的 BtbN 版本)
+
+### CMake 编译步骤
 
 ```bash
-# 创建构建目录
+# 进入项目目录
+cd LanCast
+
+# 创建并进入构建目录
 mkdir build && cd build
 
-# 配置 (Visual Studio 2022)
-cmake .. -G "Visual Studio 17 2022" -A x64
+# 设置 Qt 工具链路径
+set PATH=D:\Qt\Tools\CMake_64\bin;D:\Qt\Tools\mingw1310_64\bin;%PATH%
 
-# 构建
-cmake --build . --config Release
+# 配置 CMake
+cmake .. -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH="D:\Qt\6.11.0\mingw_64\lib\cmake"
+
+# 编译
+mingw32-make -j4
 ```
 
-### qmake
+### Qt 部署
+
+编译后需要使用 `windeployqt` 部署 Qt 运行时：
 
 ```bash
-# 生成 Makefile
-qmake .. CONFIG+=release
-
-# 构建
-make
+cd build
+D:\Qt\6.11.0\mingw_64\bin\windeployqt lancast.exe
 ```
+
+### FFmpeg 运行时
+
+运行前需要将 FFmpeg DLL 复制到程序目录：
+
+```
+avcodec-62.dll
+avformat-62.dll
+avutil-60.dll
+swresample-6.dll
+swscale-9.dll
+```
+
+或添加到系统 PATH 环境变量。
 
 ## 协议设计
 
