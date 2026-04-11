@@ -2,6 +2,7 @@
 #include "Common/FrameBuffer.h"
 #include <QPainter>
 #include <QResizeEvent>
+#include <cstring>
 
 namespace lancast {
 
@@ -24,39 +25,13 @@ VideoWidget::~VideoWidget() {
 }
 
 void VideoWidget::displayFrame(const VideoFramePtr& frame) {
-    current_frame_ = frame;
-    if (frame) {
-        display_width_ = frame->width_;
-        display_height_ = frame->height_;
-
-        // Convert YUV420P to QImage
-        QImage::Format fmt = QImage::Format_RGB888;
-
-        // Create a RGB888 QImage from YUV420P
-        QImage rgb(display_width_, display_height_, fmt);
-
-        const uint8_t* y = frame->yData();
-        const uint8_t* u = frame->uData();
-        const uint8_t* v = frame->vData();
-
-        for (int h = 0; h < display_height_; ++h) {
-            for (int w = 0; w < display_width_; ++w) {
-                int y_val = y[h * display_width_ + w];
-                int u_val = u[(h/2) * (display_width_/2) + (w/2)] - 128;
-                int v_val = v[(h/2) * (display_width_/2) + (w/2)] - 128;
-
-                // YUV to RGB conversion
-                int r = std::clamp(y_val + 1.402 * v_val, 0.0, 255.0);
-                int g = std::clamp(y_val - 0.344 * u_val - 0.714 * v_val, 0.0, 255.0);
-                int b = std::clamp(y_val + 1.772 * u_val, 0.0, 255.0);
-
-                rgb.setPixel(w, h, qRgb(r, g, b));
-            }
-        }
-
-        current_image_ = rgb;
-        scaled_image_ = rgb.scaled(size(), Qt::KeepAspectRatio, Qt::FastTransformation);
+    if (!frame) {
+        return;
     }
+
+    // Keep only the newest frame to avoid unbounded event backlog memory growth.
+    std::lock_guard<std::mutex> lock(frame_mutex_);
+    pending_frame_ = frame;
 }
 
 void VideoWidget::clear() {
@@ -94,8 +69,73 @@ void VideoWidget::resizeEvent(QResizeEvent* event) {
 }
 
 void VideoWidget::updateImage() {
-    if (!current_image_.isNull()) {
+    VideoFramePtr frame;
+    {
+        std::lock_guard<std::mutex> lock(frame_mutex_);
+        if (pending_frame_) {
+            frame = std::move(pending_frame_);
+            pending_frame_.reset();
+        }
+    }
+
+    if (frame) {
+        current_frame_ = frame;
+        display_width_ = frame->width_;
+        display_height_ = frame->height_;
+
+        convertYuv420ToRgbImage(frame, current_image_);
+        scaled_image_ = current_image_.scaled(size(), Qt::KeepAspectRatio, Qt::FastTransformation);
+    }
+
+    if (!scaled_image_.isNull()) {
         update();
+    }
+}
+
+void VideoWidget::convertYuv420ToRgbImage(const VideoFramePtr& frame, QImage& out) {
+    if (!frame || frame->width_ <= 0 || frame->height_ <= 0) {
+        return;
+    }
+
+    out = QImage(frame->width_, frame->height_, QImage::Format_RGB888);
+    if (out.isNull()) {
+        return;
+    }
+
+    const int w = frame->width_;
+    const int h = frame->height_;
+    const uint8_t* y_plane = frame->yData();
+    const uint8_t* u_plane = frame->uData();
+    const uint8_t* v_plane = frame->vData();
+
+    auto clamp_u8 = [](int v) -> uint8_t {
+        if (v < 0) return 0;
+        if (v > 255) return 255;
+        return static_cast<uint8_t>(v);
+    };
+
+    for (int row = 0; row < h; ++row) {
+        uint8_t* dst = out.scanLine(row);
+        const int uv_row = row / 2;
+        for (int col = 0; col < w; ++col) {
+            const int y = static_cast<int>(y_plane[row * w + col]);
+            const int uv_col = col / 2;
+            const int u = static_cast<int>(u_plane[uv_row * (w / 2) + uv_col]) - 128;
+            const int v = static_cast<int>(v_plane[uv_row * (w / 2) + uv_col]) - 128;
+
+            // Integer BT.601 approximation.
+            const int c = y - 16;
+            const int d = u;
+            const int e = v;
+
+            const int r = (298 * c + 409 * e + 128) >> 8;
+            const int g = (298 * c - 100 * d - 208 * e + 128) >> 8;
+            const int b = (298 * c + 516 * d + 128) >> 8;
+
+            dst[col * 3 + 0] = clamp_u8(r);
+            dst[col * 3 + 1] = clamp_u8(g);
+            dst[col * 3 + 2] = clamp_u8(b);
+        }
     }
 }
 

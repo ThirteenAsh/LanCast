@@ -50,7 +50,7 @@ public:
     Mode mode() const { return mode_; }
 
     // Get discovery service
-    RoomDiscovery* discovery() { return discovery_.get(); }
+    RoomDiscovery* discovery();
 
     // Get network manager
     NetworkManager* network() { return network_.get(); }

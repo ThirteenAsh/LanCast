@@ -28,6 +28,7 @@ bool NetworkManager::initSender(const std::string& target_ip, uint16_t target_po
     if (!send_socket_->bind(0)) {  // Bind to any available port
         return false;
     }
+    send_socket_->setBroadcast(true);
 
     // Initialize packetizer
     packetizer_ = std::make_shared<RtpPacketizer>();

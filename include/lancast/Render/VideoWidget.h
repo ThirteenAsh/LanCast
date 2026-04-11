@@ -3,6 +3,7 @@
 #include <QWidget>
 #include <QImage>
 #include <QTimer>
+#include <mutex>
 #include <memory>
 #include "Common/FrameBuffer.h"
 
@@ -36,6 +37,7 @@ protected:
     void resizeEvent(QResizeEvent* event) override;
 
 private:
+    void convertYuv420ToRgbImage(const VideoFramePtr& frame, QImage& out);
     void updateImage();
 
     QImage current_image_;
@@ -43,6 +45,8 @@ private:
     QTimer repaint_timer_;
 
     VideoFramePtr current_frame_;
+    VideoFramePtr pending_frame_;
+    std::mutex frame_mutex_;
     int display_width_ = 0;
     int display_height_ = 0;
 };

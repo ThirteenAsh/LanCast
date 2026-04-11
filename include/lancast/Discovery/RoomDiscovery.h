@@ -29,6 +29,9 @@ public:
     bool startBroadcast(const std::string& room_id, const std::string& room_name,
                         uint16_t stream_port);
 
+    // Start discovery listener/query loop without hosting.
+    bool startDiscovery();
+
     // Stop broadcasting
     void stopBroadcast();
 
@@ -52,6 +55,7 @@ public:
     RoomInfo ourRoomInfo() const { return our_info_; }
 
 private:
+    bool openDiscoverySocket();
     void discoveryThreadFunc();
     void processReceivedPacket(const uint8_t* data, size_t len,
                                  const std::string& src_ip, uint16_t src_port);

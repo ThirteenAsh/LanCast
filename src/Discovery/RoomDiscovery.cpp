@@ -16,9 +16,55 @@ RoomDiscovery::~RoomDiscovery() {
     stopBroadcast();
 }
 
+bool RoomDiscovery::openDiscoverySocket() {
+    if (socket_ >= 0) {
+        return true;
+    }
+
+    socket_ = ::socket(AF_INET, SOCK_DGRAM, 0);
+    if (socket_ < 0) {
+        return false;
+    }
+
+    BOOL opt = TRUE;
+    setsockopt(socket_, SOL_SOCKET, SO_BROADCAST, (const char*)&opt, sizeof(opt));
+    setsockopt(socket_, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
+
+    sockaddr_in bind_addr;
+    memset(&bind_addr, 0, sizeof(bind_addr));
+    bind_addr.sin_family = AF_INET;
+    bind_addr.sin_port = htons(DISCOVERY_PORT);
+    bind_addr.sin_addr.s_addr = INADDR_ANY;
+
+    if (::bind(socket_, (sockaddr*)&bind_addr, sizeof(bind_addr)) < 0) {
+        closesocket(socket_);
+        socket_ = -1;
+        return false;
+    }
+
+    return true;
+}
+
+bool RoomDiscovery::startDiscovery() {
+    if (running_) {
+        discovering_ = true;
+        return true;
+    }
+
+    if (!openDiscoverySocket()) {
+        return false;
+    }
+
+    broadcasting_ = false;
+    discovering_ = true;
+    running_ = true;
+    discovery_thread_ = std::thread(&RoomDiscovery::discoveryThreadFunc, this);
+    return true;
+}
+
 bool RoomDiscovery::startBroadcast(const std::string& room_id, const std::string& room_name,
                                     uint16_t stream_port) {
-    if (broadcasting_) {
+    if (running_) {
         stopBroadcast();
     }
 
@@ -51,26 +97,7 @@ bool RoomDiscovery::startBroadcast(const std::string& room_id, const std::string
     our_info_.stream_port_ = stream_port;
     our_info_.version_ = DISCOVERY_VERSION;
 
-    // Create UDP socket
-    socket_ = ::socket(AF_INET, SOCK_DGRAM, 0);
-    if (socket_ < 0) {
-        return false;
-    }
-
-    // Enable broadcast
-    BOOL opt = TRUE;
-    setsockopt(socket_, SOL_SOCKET, SO_BROADCAST, (const char*)&opt, sizeof(opt));
-
-    // Bind to discovery port
-    sockaddr_in bind_addr;
-    memset(&bind_addr, 0, sizeof(bind_addr));
-    bind_addr.sin_family = AF_INET;
-    bind_addr.sin_port = htons(DISCOVERY_PORT);
-    bind_addr.sin_addr.s_addr = INADDR_ANY;
-
-    if (::bind(socket_, (sockaddr*)&bind_addr, sizeof(bind_addr)) < 0) {
-        closesocket(socket_);
-        socket_ = -1;
+    if (!openDiscoverySocket()) {
         return false;
     }
 
@@ -233,6 +260,26 @@ void RoomDiscovery::processReceivedPacket(const uint8_t* data, size_t len,
 
         if (on_room_discovered_) {
             on_room_discovered_(info);
+        }
+    } else if (header.msg_type_ == DiscoveryMsgType::QUERY) {
+        if (!broadcasting_ || socket_ < 0) {
+            return;
+        }
+
+        auto serialized = our_info_.serialize();
+        uint8_t msg[DiscoveryHeader::SIZE + RoomInfo::SERIALIZED_SIZE];
+        msg[0] = DiscoveryHeader::CURRENT_VERSION;
+        msg[1] = DiscoveryHeader::DEFAULT_TTL;
+        msg[2] = static_cast<uint8_t>(DiscoveryMsgType::RESPONSE);
+        memcpy(msg + DiscoveryHeader::SIZE, serialized.data(), RoomInfo::SERIALIZED_SIZE);
+
+        sockaddr_in dest;
+        memset(&dest, 0, sizeof(dest));
+        dest.sin_family = AF_INET;
+        dest.sin_port = htons(src_port);
+        if (inet_pton(AF_INET, src_ip.c_str(), &dest.sin_addr) == 1) {
+            sendto(socket_, (const char*)msg, sizeof(msg), 0,
+                   (sockaddr*)&dest, sizeof(dest));
         }
     }
 }

@@ -140,7 +140,8 @@ private:
 
         // Video frame display
         connect(engine_.get(), &lancast::StreamEngine::newVideoFrame,
-                [this](const lancast::VideoFramePtr& frame) {
+            this,
+            [this](const lancast::VideoFramePtr& frame) {
                     videoWidget_->displayFrame(frame);
                 });
     }

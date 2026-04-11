@@ -4,7 +4,10 @@
 
 namespace lancast {
 
-StreamEngine::StreamEngine() = default;
+StreamEngine::StreamEngine() {
+    discovery_ = std::make_shared<RoomDiscovery>();
+    discovery_->startDiscovery();
+}
 
 StreamEngine::~StreamEngine() {
     stopHost();
@@ -45,13 +48,17 @@ bool StreamEngine::startHost(const std::string& room_name, int width, int height
 
     // Initialize network as sender
     network_ = std::make_shared<NetworkManager>();
-    // Get broadcast address (last octet = 255 for /24 network)
-    // For simplicity, use the target from discovery or default
-    // In host mode, we need to know where to send - for now we start without destination
-    // The viewer will connect and tell us its address
+    if (!network_->initSender("255.255.255.255", stream_port)) {
+        emit error("Failed to initialize network sender");
+        encoder_.reset();
+        capturer_.reset();
+        network_.reset();
+        return false;
+    }
 
-    // Initialize discovery and start broadcasting
-    discovery_ = std::make_shared<RoomDiscovery>();
+    if (!discovery_) {
+        discovery_ = std::make_shared<RoomDiscovery>();
+    }
 
     // Generate room ID
     std::random_device rd;
@@ -84,7 +91,7 @@ void StreamEngine::stopHost() {
 
     if (discovery_) {
         discovery_->stopBroadcast();
-        discovery_.reset();
+        discovery_->startDiscovery();
     }
 
     network_.reset();
@@ -111,7 +118,7 @@ bool StreamEngine::startViewer(const RoomInfo& room) {
 
     // Initialize network as receiver
     network_ = std::make_shared<NetworkManager>();
-    if (!network_->initReceiver(50000 + (rand() % 10000))) {
+    if (!network_->initReceiver(room.stream_port_)) {
         emit error("Failed to initialize network receiver");
         decoder_.reset();
         return false;
@@ -134,6 +141,16 @@ void StreamEngine::stopViewer() {
     decoder_.reset();
 
     mode_ = Mode::NONE;
+}
+
+RoomDiscovery* StreamEngine::discovery() {
+    if (!discovery_) {
+        discovery_ = std::make_shared<RoomDiscovery>();
+    }
+    if (!discovery_->isDiscovering()) {
+        discovery_->startDiscovery();
+    }
+    return discovery_.get();
 }
 
 void StreamEngine::startCaptureThreads() {
@@ -164,7 +181,9 @@ void StreamEngine::captureThreadFunc() {
     using namespace std::chrono;
 
     auto last_capture = steady_clock::now();
+    auto last_preview = last_capture;
     int frame_interval_ms = 1000 / fps_;
+    constexpr int preview_interval_ms = 66;  // ~15fps preview is enough for local monitor
 
     while (running_) {
         auto now = steady_clock::now();
@@ -174,6 +193,11 @@ void StreamEngine::captureThreadFunc() {
             if (capturer_) {
                 auto frame = capturer_->captureFrame();
                 if (frame) {
+                    auto preview_elapsed = duration_cast<milliseconds>(now - last_preview).count();
+                    if (preview_elapsed >= preview_interval_ms) {
+                        emit newVideoFrame(frame);
+                        last_preview = now;
+                    }
                     capture_queue_.push(frame, 10);  // 10ms timeout
                 }
             }
@@ -191,9 +215,7 @@ void StreamEngine::encodeThreadFunc() {
             if (encoder_ && frame) {
                 auto encoded = encoder_->encode(frame);
                 if (encoded && network_) {
-                    // Send to all viewers who have requested this stream
-                    // In a real implementation, we'd maintain a list of connected viewers
-                    // For now, the network doesn't have a target yet
+                    network_->sendFrame(encoded);
                 }
             }
         }
