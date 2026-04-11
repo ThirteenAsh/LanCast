@@ -56,6 +56,7 @@ private:
     // Frame timing
     int64_t last_frame_time_ = 0;
     bool initialized_ = false;
+    bool frame_acquired_ = false;
 
     // Adapter/Output indices
     int adapter_idx_ = 0;

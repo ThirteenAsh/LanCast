@@ -53,20 +53,22 @@ public:
         // Video
         , videoWidget_(new lancast::VideoWidget())
         , latencyLabel_(new QLabel("延迟: -- ms"))
+        // Menu
+        , menuFile_(new QMenu("文件", this))
+        , actionExit_(new QAction("退出", this))
     {
         setupUi();
-        setupConnections();
 
         // Initialize StreamEngine
         engine_ = std::make_shared<lancast::StreamEngine>();
 
+        setupConnections();
+
         // Connect StreamEngine signals
-        connect(engine_.get(), SIGNAL(newVideoFrame(std::shared_ptr<lancast::VideoFrame>)),
-                this, SLOT(onNewVideoFrame(std::shared_ptr<lancast::VideoFrame>)));
-        connect(engine_.get(), SIGNAL(error(std::string)),
-                this, SLOT(onError(std::string)));
-        connect(engine_.get(), SIGNAL(roomsUpdated(std::vector<lancast::RoomInfo>)),
-                this, SLOT(onRoomsUpdated(std::vector<lancast::RoomInfo>)));
+        connect(engine_.get(), &lancast::StreamEngine::error,
+            this, &MainWindow::onError);
+        connect(engine_.get(), &lancast::StreamEngine::roomsUpdated,
+            this, &MainWindow::onRoomsUpdated);
 
         // Menu
         menuBar()->addMenu(menuFile_);

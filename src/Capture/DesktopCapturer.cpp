@@ -21,7 +21,7 @@ bool DesktopCapturer::initialize(int output_width, int output_height, int fps) {
     width_ = output_width;
     height_ = output_height;
     target_fps_ = fps;
-    frame_interval_ms_ = 1000 / fps;
+    frame_interval_ms_ = (fps > 0) ? (1000 / fps) : (1000 / 30);
 
     if (!initD3D()) {
         return false;
@@ -95,6 +95,16 @@ bool DesktopCapturer::initD3D() {
                 adapter->Release();
                 factory->Release();
                 return false;
+            }
+
+            DXGI_OUTPUT_DESC output_desc;
+            if (SUCCEEDED(output_->GetDesc(&output_desc))) {
+                int native_width = output_desc.DesktopCoordinates.right - output_desc.DesktopCoordinates.left;
+                int native_height = output_desc.DesktopCoordinates.bottom - output_desc.DesktopCoordinates.top;
+                if (native_width > 0 && native_height > 0) {
+                    width_ = native_width;
+                    height_ = native_height;
+                }
             }
 
             adapter->Release();
@@ -173,8 +183,9 @@ void DesktopCapturer::shutdown() {
 }
 
 void DesktopCapturer::releaseResources() {
-    if (duplication_) {
+    if (duplication_ && frame_acquired_) {
         duplication_->ReleaseFrame();
+        frame_acquired_ = false;
     }
 }
 
@@ -204,13 +215,15 @@ VideoFramePtr DesktopCapturer::captureFrame() {
         return nullptr;
     }
 
+    frame_acquired_ = true;
+
     // Get the desktop surface
     ID3D11Texture2D* desktop_texture = nullptr;
     hr = resource->QueryInterface(__uuidof(ID3D11Texture2D), (void**)&desktop_texture);
     resource->Release();
 
     if (FAILED(hr) || !desktop_texture) {
-        duplication_->ReleaseFrame();
+        releaseResources();
         return nullptr;
     }
 
@@ -218,17 +231,32 @@ VideoFramePtr DesktopCapturer::captureFrame() {
     D3D11_TEXTURE2D_DESC desc;
     desktop_texture->GetDesc(&desc);
 
-    // Ensure staging texture matches
+    // Ensure staging texture matches the acquired desktop frame.
     if (desc.Width != width_ || desc.Height != height_) {
+        width_ = static_cast<int>(desc.Width);
+        height_ = static_cast<int>(desc.Height);
+
         // Recreate staging texture if needed
         if (staging_texture_) {
             staging_texture_->Release();
+            staging_texture_ = nullptr;
         }
-        desc.Width = width_;
-        desc.Height = height_;
         desc.Usage = D3D11_USAGE_STAGING;
         desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-        device_->CreateTexture2D(&desc, nullptr, &staging_texture_);
+        desc.BindFlags = 0;
+        desc.MiscFlags = 0;
+
+        if (FAILED(device_->CreateTexture2D(&desc, nullptr, &staging_texture_)) || !staging_texture_) {
+            desktop_texture->Release();
+            releaseResources();
+            return nullptr;
+        }
+    }
+
+    if (!staging_texture_) {
+        desktop_texture->Release();
+        releaseResources();
+        return nullptr;
     }
 
     context_->CopyResource(staging_texture_, desktop_texture);
@@ -238,7 +266,7 @@ VideoFramePtr DesktopCapturer::captureFrame() {
     D3D11_MAPPED_SUBRESOURCE mapped;
     hr = context_->Map(staging_texture_, 0, D3D11_MAP_READ, 0, &mapped);
     if (FAILED(hr)) {
-        duplication_->ReleaseFrame();
+        releaseResources();
         return nullptr;
     }
 
@@ -247,7 +275,7 @@ VideoFramePtr DesktopCapturer::captureFrame() {
     convertBgraToYuv420(static_cast<const uint8_t*>(mapped.pData), mapped.RowPitch, frame);
 
     context_->Unmap(staging_texture_, 0);
-    duplication_->ReleaseFrame();
+    releaseResources();
 
     last_frame_time_ = now;
     return frame;

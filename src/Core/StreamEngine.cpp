@@ -27,6 +27,10 @@ bool StreamEngine::startHost(const std::string& room_name, int width, int height
         return false;
     }
 
+    // Keep encoder resolution consistent with actual capture output.
+    width_ = capturer_->width();
+    height_ = capturer_->height();
+
     // Initialize encoder
     encoder_ = std::make_shared<H264Encoder>();
     if (!encoder_->initialize(width_, height_, fps_, bitrate_kbps_)) {
