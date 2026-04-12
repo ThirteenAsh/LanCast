@@ -73,72 +73,35 @@ VideoFramePtr H264Decoder::decodeAnnexB(const uint8_t* data, size_t len, int64_t
         return nullptr;
     }
 
-    // Convert Annex B to length-prefixed format for avparser
-    // Or just feed directly with avcodec_send_input
+    if (!data || len == 0) {
+        return nullptr;
+    }
 
-    // Parse start codes and create packets
-    const uint8_t* ptr = data;
-    size_t remaining = len;
+    av_packet_unref(av_packet_);
+    av_packet_->data = const_cast<uint8_t*>(data);
+    av_packet_->size = static_cast<int>(len);
+    av_packet_->pts = pts;
 
-    while (remaining > 0) {
-        // Find start code
-        size_t offset = 0;
-        while (offset + 4 <= remaining) {
-            uint32_t val = (ptr[offset] << 24) | (ptr[offset+1] << 16) |
-                           (ptr[offset+2] << 8) | ptr[offset+3];
-            if (val == 0x00000001) {
-                offset += 4;
-                break;
-            }
-            offset++;
+    int ret = avcodec_send_packet(codec_ctx_, av_packet_);
+    if (ret < 0) {
+        return nullptr;
+    }
+
+    while (ret >= 0) {
+        ret = avcodec_receive_frame(codec_ctx_, av_frame_);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+            break;
         }
-
-        if (offset + 4 > remaining) break;
-
-        // Find next start code
-        size_t nal_end = offset;
-        while (nal_end + 4 <= remaining) {
-            uint32_t val = (ptr[nal_end] << 24) | (ptr[nal_end+1] << 16) |
-                           (ptr[nal_end+2] << 8) | ptr[nal_end+3];
-            if (val == 0x00000001) break;
-            nal_end++;
-        }
-
-        size_t nal_size = nal_end - offset;
-
-        // Create packet with length prefix
-        av_packet_->data = (uint8_t*)ptr + offset - 4;  // Include length bytes
-        av_packet_->size = (int)(nal_size + 4);
-
-        // Set length bytes
-        av_packet_->data[0] = (nal_size >> 24) & 0xFF;
-        av_packet_->data[1] = (nal_size >> 16) & 0xFF;
-        av_packet_->data[2] = (nal_size >> 8) & 0xFF;
-        av_packet_->data[3] = nal_size & 0xFF;
-
-        int ret = avcodec_send_packet(codec_ctx_, av_packet_);
         if (ret < 0) {
-            av_packet_unref(av_packet_);
-            continue;
+            return nullptr;
         }
 
-        while (ret >= 0) {
-            ret = avcodec_receive_frame(codec_ctx_, av_frame_);
-            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-                break;
-            }
-            if (ret >= 0) {
-                auto frame = convertAvFrame(av_frame_);
-                av_frame_unref(av_frame_);
-                if (frame) {
-                    frame->pts_ = pts;
-                    return frame;
-                }
-            }
+        auto frame = convertAvFrame(av_frame_);
+        av_frame_unref(av_frame_);
+        if (frame) {
+            frame->pts_ = pts;
+            return frame;
         }
-
-        ptr += nal_end;
-        remaining = len - (ptr - data);
     }
 
     return nullptr;

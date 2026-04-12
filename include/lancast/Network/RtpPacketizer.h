@@ -29,10 +29,10 @@ private:
     std::vector<std::pair<uint8_t, std::vector<uint8_t>>> parseNalUnits(const EncodedFramePtr& frame);
 
     // Create single NAL unit packet
-    RtpPacketPtr createSingleNalPacket(uint8_t nal_type, const std::vector<uint8_t>& nal_data, bool marker);
+    RtpPacketPtr createSingleNalPacket(uint8_t nal_header, const std::vector<uint8_t>& nal_data, bool marker);
 
     // Create FU-A fragment packet
-    RtpPacketPtr createFuAPacket(uint8_t nal_type, const std::vector<uint8_t>& nal_data,
+    RtpPacketPtr createFuAPacket(uint8_t nal_header, const std::vector<uint8_t>& nal_data,
                                   bool start, bool end, bool marker);
 
     uint32_t ssrc_ = 0;

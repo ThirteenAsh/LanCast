@@ -45,7 +45,7 @@ EncodedFramePtr RtpDepacketizer::depacketize(const RtpPacketPtr& packet) {
 
 bool RtpDepacketizer::processSingleNal(const RtpPacketPtr& packet) {
     const auto& payload = packet->payload();
-    if (payload.size() < 2) return false;
+    if (payload.empty()) return false;
 
     // Reconstruct length + NAL type header
     uint8_t nal_type = payload[0] & 0x1F;
@@ -56,8 +56,6 @@ bool RtpDepacketizer::processSingleNal(const RtpPacketPtr& packet) {
         current_frame_keyframe_ = true;
     }
 
-    // Add start code emulation prevention removal would go here
-    // For now, directly copy
     std::vector<uint8_t> nal_unit;
     nal_unit.reserve(payload.size());
 
@@ -67,8 +65,8 @@ bool RtpDepacketizer::processSingleNal(const RtpPacketPtr& packet) {
     nal_unit.push_back(0x00);
     nal_unit.push_back(0x01);
 
-    // NAL data (skip the first byte which is the length/indicator)
-    nal_unit.insert(nal_unit.end(), payload.begin() + 1, payload.end());
+    // Single NAL payload already contains full NAL header + data.
+    nal_unit.insert(nal_unit.end(), payload.begin(), payload.end());
 
     current_frame_data_.insert(current_frame_data_.end(),
                                 nal_unit.begin(), nal_unit.end());
@@ -124,8 +122,9 @@ bool RtpDepacketizer::processFuA(const RtpPacketPtr& packet) {
         nal_unit.push_back(0x00);
         nal_unit.push_back(0x01);
 
-        // NAL header (original)
-        nal_unit.push_back(fu_a_buffer_.nal_type);
+        // Rebuild original NAL header from FU indicator(F/NRI) + FU header(type).
+        uint8_t nal_header = (fu_indicator & 0xE0) | (fu_a_buffer_.nal_type & 0x1F);
+        nal_unit.push_back(nal_header);
 
         // Fragment data
         nal_unit.insert(nal_unit.end(),

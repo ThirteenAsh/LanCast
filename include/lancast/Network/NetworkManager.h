@@ -54,6 +54,8 @@ private:
     Mode mode_ = Mode::NONE;
     std::string target_ip_;
     uint16_t target_port_ = 0;
+    std::string loopback_target_ip_ = "127.0.0.1";
+    uint16_t loopback_target_port_ = 0;
     uint16_t local_port_ = 0;
 
     UdpSocketPtr send_socket_;

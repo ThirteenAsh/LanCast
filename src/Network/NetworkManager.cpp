@@ -23,6 +23,7 @@ NetworkManager::~NetworkManager() {
 bool NetworkManager::initSender(const std::string& target_ip, uint16_t target_port) {
     target_ip_ = target_ip;
     target_port_ = target_port;
+    loopback_target_port_ = target_port;
 
     send_socket_ = std::make_shared<UdpSocket>();
     if (!send_socket_->bind(0)) {  // Bind to any available port
@@ -71,7 +72,11 @@ bool NetworkManager::sendFrame(const EncodedFramePtr& frame) {
 
     auto packets = packetizer_->packetize(frame);
     for (auto& packet : packets) {
-        send_socket_->sendTo(packet->build(), target_ip_, target_port_);
+        auto bytes = packet->build();
+        send_socket_->sendTo(bytes, target_ip_, target_port_);
+        if (loopback_target_port_ > 0 && target_ip_ != loopback_target_ip_) {
+            send_socket_->sendTo(bytes, loopback_target_ip_, loopback_target_port_);
+        }
     }
 
     timestamp_ += 3000;  // 90kHz / 30fps

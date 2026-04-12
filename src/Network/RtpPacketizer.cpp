@@ -30,7 +30,7 @@ std::vector<RtpPacketPtr> RtpPacketizer::packetize(const EncodedFramePtr& frame)
     auto nal_units = parseNalUnits(frame);
 
     for (size_t i = 0; i < nal_units.size(); ++i) {
-        uint8_t nal_type = nal_units[i].first;
+        uint8_t nal_header = nal_units[i].first;
         const auto& nal_data = nal_units[i].second;
 
         bool is_last = (i == nal_units.size() - 1);
@@ -38,7 +38,7 @@ std::vector<RtpPacketPtr> RtpPacketizer::packetize(const EncodedFramePtr& frame)
 
         if (nal_data.size() <= MAX_RTP_PAYLOAD_SIZE) {
             // Single NAL unit packet
-            packets.push_back(createSingleNalPacket(nal_type, nal_data, marker));
+            packets.push_back(createSingleNalPacket(nal_header, nal_data, marker));
         } else {
             // FU-A fragmentation
             size_t fu_payload_size = MAX_RTP_PAYLOAD_SIZE - 2;  // FU header (2 bytes)
@@ -52,7 +52,7 @@ std::vector<RtpPacketPtr> RtpPacketizer::packetize(const EncodedFramePtr& frame)
 
                 std::vector<uint8_t> frag_data(nal_data.begin() + offset,
                                                 nal_data.begin() + offset + size);
-                packets.push_back(createFuAPacket(nal_type, frag_data, start, end, end && is_last));
+                packets.push_back(createFuAPacket(nal_header, frag_data, start, end, end && is_last));
             }
         }
     }
@@ -89,8 +89,8 @@ std::vector<std::pair<uint8_t, std::vector<uint8_t>>> RtpPacketizer::parseNalUni
 
         if (pos >= size) break;
 
-        // NAL type
-        uint8_t nal_type = data[pos] & 0x1F;
+        // Full NAL header byte (F + NRI + Type).
+        uint8_t nal_header = data[pos];
 
         // Skip NAL header byte for data
         std::vector<uint8_t> nal_data(data + pos + 1, data + size);
@@ -110,7 +110,7 @@ std::vector<std::pair<uint8_t, std::vector<uint8_t>>> RtpPacketizer::parseNalUni
         }
 
         nal_data.resize(end_pos - pos - 1);
-        result.push_back({nal_type, nal_data});
+        result.push_back({nal_header, nal_data});
 
         pos = end_pos;
     }
@@ -118,20 +118,14 @@ std::vector<std::pair<uint8_t, std::vector<uint8_t>>> RtpPacketizer::parseNalUni
     return result;
 }
 
-RtpPacketPtr RtpPacketizer::createSingleNalPacket(uint8_t nal_type, const std::vector<uint8_t>& nal_data, bool marker) {
+RtpPacketPtr RtpPacketizer::createSingleNalPacket(uint8_t nal_header, const std::vector<uint8_t>& nal_data, bool marker) {
     auto packet = std::make_shared<RtpPacket>();
 
-    // Build NAL header with start code emulation prevention
     std::vector<uint8_t> payload;
-    payload.reserve(nal_data.size() + 4);
+    payload.reserve(nal_data.size() + 1);
 
-    // Length + NAL header
-    uint8_t nal_header[] = {0, 0, static_cast<uint8_t>(nal_type | (nal_data.empty() ? 0 : nal_data[0]))};
-    // Actually for single NAL, we just prepend length (4 bytes big endian)
-    payload.push_back(0);
-    payload.push_back(0);
-    payload.push_back(0);
-    payload.push_back(nal_type);
+    // Single NAL RTP payload = NAL header + NAL payload.
+    payload.push_back(nal_header);
     payload.insert(payload.end(), nal_data.begin(), nal_data.end());
 
     packet->setPayloadType(payload_type_);
@@ -144,16 +138,16 @@ RtpPacketPtr RtpPacketizer::createSingleNalPacket(uint8_t nal_type, const std::v
     return packet;
 }
 
-RtpPacketPtr RtpPacketizer::createFuAPacket(uint8_t nal_type, const std::vector<uint8_t>& frag_data,
+RtpPacketPtr RtpPacketizer::createFuAPacket(uint8_t nal_header, const std::vector<uint8_t>& frag_data,
                                               bool start, bool end, bool marker) {
     auto packet = std::make_shared<RtpPacket>();
 
     // FU indicator + FU header (2 bytes)
-    uint8_t fu_indicator = 0x1C;  // NAL type = 28, F=0, NRI=3
+    uint8_t fu_indicator = static_cast<uint8_t>((nal_header & 0xE0) | NAL_TYPE_FU_A);
     uint8_t fu_header = 0;
     if (start) fu_header |= 0x80;  // S bit
     if (end) fu_header |= 0x40;    // E bit
-    fu_header |= (nal_type & 0x1F);
+    fu_header |= (nal_header & 0x1F);
 
     std::vector<uint8_t> payload;
     payload.reserve(frag_data.size() + 2);

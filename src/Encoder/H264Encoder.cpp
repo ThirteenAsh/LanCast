@@ -5,6 +5,7 @@ extern "C" {
 #include <libavutil/imgutils.h>
 #include <libswscale/swscale.h>
 }
+#include <cstring>
 
 #pragma comment(lib, "avcodec.lib")
 #pragma comment(lib, "avutil.lib")
@@ -54,6 +55,7 @@ bool H264Encoder::initialize(int width, int height, int fps, int bitrate_kbps) {
     av_opt_set(codec_ctx_->priv_data, "profile", "baseline", 0);
     av_opt_set(codec_ctx_->priv_data, "preset", "ultrafast", 0);
     av_opt_set(codec_ctx_->priv_data, "tune", "zerolatency", 0);
+    av_opt_set(codec_ctx_->priv_data, "x264-params", "annexb=1:repeat-headers=1", 0);
 
     if (avcodec_open2(codec_ctx_, codec, nullptr) < 0) {
         avcodec_free_context(&codec_ctx_);
@@ -158,31 +160,44 @@ EncodedFramePtr H264Encoder::encode(const VideoFramePtr& frame) {
             return nullptr;
         }
 
-        // Convert to Annex B format
-        // Find NAL units and prepend start codes
-        const uint8_t* ptr = av_packet_->data;
-        const uint8_t* end = ptr + av_packet_->size;
+        const uint8_t* data = av_packet_->data;
+        const size_t size = static_cast<size_t>(av_packet_->size);
 
-        while (ptr < end) {
-            // Find NAL unit length (4 bytes, big-endian)
-            uint32_t nal_size = (ptr[0] << 24) | (ptr[1] << 16) | (ptr[2] << 8) | ptr[3];
-            ptr += 4;
+        const bool has_annexb_start =
+            (size >= 4 && data[0] == 0x00 && data[1] == 0x00 &&
+             ((data[2] == 0x01) || (data[2] == 0x00 && data[3] == 0x01)));
 
-            if (ptr + nal_size > end) break;
+        if (has_annexb_start) {
+            // Most software H.264 encoders output Annex B already.
+            encoded->data_.insert(encoded->data_.end(), data, data + size);
+        } else {
+            // Fallback: convert AVCC length-prefixed NALs to Annex B.
+            const uint8_t* ptr = data;
+            const uint8_t* end = data + size;
 
-            // Determine NAL type
-            int nal_type = ptr[0] & 0x1F;
+            while (ptr + 4 <= end) {
+                uint32_t nal_size = (static_cast<uint32_t>(ptr[0]) << 24) |
+                                    (static_cast<uint32_t>(ptr[1]) << 16) |
+                                    (static_cast<uint32_t>(ptr[2]) << 8) |
+                                    static_cast<uint32_t>(ptr[3]);
+                ptr += 4;
 
-            // Write start code
-            encoded->data_.push_back(0x00);
-            encoded->data_.push_back(0x00);
-            encoded->data_.push_back(0x00);
-            encoded->data_.push_back(0x01);
+                if (ptr + nal_size > end) {
+                    break;
+                }
 
-            // Write NAL data
-            encoded->data_.insert(encoded->data_.end(), ptr, ptr + nal_size);
+                encoded->data_.push_back(0x00);
+                encoded->data_.push_back(0x00);
+                encoded->data_.push_back(0x00);
+                encoded->data_.push_back(0x01);
+                encoded->data_.insert(encoded->data_.end(), ptr, ptr + nal_size);
 
-            ptr += nal_size;
+                ptr += nal_size;
+            }
+        }
+
+        if ((av_packet_->flags & AV_PKT_FLAG_KEY) != 0) {
+            encoded->key_frame_ = true;
         }
 
         av_packet_unref(av_packet_);
