@@ -118,7 +118,7 @@ private:
     int width_ = 1920;
     int height_ = 1080;
     int fps_ = 30;
-    int bitrate_kbps_ = 2000;
+    int bitrate_kbps_ = 8000;
 
     RoomInfo target_room_;
 };

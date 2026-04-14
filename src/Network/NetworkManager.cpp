@@ -25,7 +25,10 @@ bool NetworkManager::initSender(const std::string& target_ip, uint16_t target_po
     Logger::log("NetworkManager::initSender ip=" + target_ip + ":" + std::to_string(target_port));
     target_ip_ = target_ip;
     target_port_ = target_port;
-    loopback_target_port_ = target_port;
+    // Do not send a second loopback copy.
+    // When running host/viewer on the same machine, duplicated packets from
+    // broadcast + loopback can corrupt depacketization order.
+    loopback_target_port_ = 0;
 
     send_socket_ = std::make_shared<UdpSocket>();
     if (!send_socket_->bind(0)) {  // Bind to any available port
@@ -79,9 +82,6 @@ bool NetworkManager::sendFrame(const EncodedFramePtr& frame) {
     for (auto& packet : packets) {
         auto bytes = packet->build();
         send_socket_->sendTo(bytes, target_ip_, target_port_);
-        if (loopback_target_port_ > 0 && target_ip_ != loopback_target_ip_) {
-            send_socket_->sendTo(bytes, loopback_target_ip_, loopback_target_port_);
-        }
     }
 
     timestamp_ += 3000;  // 90kHz / 30fps

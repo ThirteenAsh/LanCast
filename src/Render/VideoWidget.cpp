@@ -67,7 +67,7 @@ void VideoWidget::resizeEvent(QResizeEvent* event) {
 
     // Rescale the image to new size
     if (!current_image_.isNull()) {
-        scaled_image_ = current_image_.scaled(size(), Qt::KeepAspectRatio, Qt::FastTransformation);
+        scaled_image_ = current_image_.scaled(size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
     }
 }
 
@@ -88,7 +88,7 @@ void VideoWidget::updateImage() {
         display_height_ = frame->height_;
 
         convertYuv420ToRgbImage(frame, current_image_);
-        scaled_image_ = current_image_.scaled(size(), Qt::KeepAspectRatio, Qt::FastTransformation);
+        scaled_image_ = current_image_.scaled(size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
         if ((++painted_frames % 30) == 1) Logger::log("VideoWidget::updateImage painted size=" + std::to_string(display_width_) + "x" + std::to_string(display_height_));
     }
 

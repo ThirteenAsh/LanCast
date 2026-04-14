@@ -42,20 +42,26 @@ bool H264Encoder::initialize(int width, int height, int fps, int bitrate_kbps) {
     codec_ctx_->time_base = {1, fps_};
     codec_ctx_->framerate = {fps_, 1};
     codec_ctx_->bit_rate = bitrate_kbps_ * 1000;
-    codec_ctx_->gop_size = fps_ * 2;  // Keyframe every 2 seconds
+    const int key_interval = (fps_ > 1) ? (fps_ / 2) : 1;  // Keyframe every ~0.5s
+    codec_ctx_->gop_size = key_interval;
     codec_ctx_->max_b_frames = 0;     // No B-frames for low latency
     codec_ctx_->thread_count = 4;
 
     // Rate control
-    codec_ctx_->rc_buffer_size = bitrate_kbps_ * 1000;
+    codec_ctx_->rc_buffer_size = bitrate_kbps_ * 2000;
     codec_ctx_->rc_max_rate = bitrate_kbps_ * 1000;
-    codec_ctx_->rc_min_rate = bitrate_kbps_ * 500;
+    codec_ctx_->rc_min_rate = 0;
 
     // Profile for compatibility
-    av_opt_set(codec_ctx_->priv_data, "profile", "baseline", 0);
-    av_opt_set(codec_ctx_->priv_data, "preset", "ultrafast", 0);
+    av_opt_set(codec_ctx_->priv_data, "profile", "high", 0);
+    av_opt_set(codec_ctx_->priv_data, "preset", "veryfast", 0);
     av_opt_set(codec_ctx_->priv_data, "tune", "zerolatency", 0);
-    av_opt_set(codec_ctx_->priv_data, "x264-params", "annexb=1:repeat-headers=1", 0);
+    {
+        const std::string x264_params =
+            "annexb=1:repeat-headers=1:vbv-init=0.9:keyint=" + std::to_string(key_interval) +
+            ":min-keyint=" + std::to_string(key_interval) + ":scenecut=0";
+        av_opt_set(codec_ctx_->priv_data, "x264-params", x264_params.c_str(), 0);
+    }
 
     if (avcodec_open2(codec_ctx_, codec, nullptr) < 0) {
         avcodec_free_context(&codec_ctx_);
@@ -133,7 +139,9 @@ EncodedFramePtr H264Encoder::encode(const VideoFramePtr& frame) {
     av_frame_->pict_type = AV_PICTURE_TYPE_NONE;
 
     // Force keyframe on first frame and if requested
-    bool is_key = force_keyframe_ || frame->key_frame_;
+    const int periodic_key_interval = (fps_ > 1) ? (fps_ / 2) : 1;
+    const bool periodic_key = (frame_count_ % periodic_key_interval) == 0;
+    bool is_key = force_keyframe_ || frame->key_frame_ || periodic_key;
     if (is_key) {
         av_frame_->pict_type = AV_PICTURE_TYPE_I;
         av_frame_->flags |= AV_FRAME_FLAG_KEY;
