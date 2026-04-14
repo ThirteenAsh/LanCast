@@ -1,4 +1,5 @@
 #include "Decoder/H264Decoder.h"
+#include "Common/Logger.h"
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
@@ -16,6 +17,7 @@ H264Decoder::~H264Decoder() {
 }
 
 bool H264Decoder::initialize(int width, int height) {
+    Logger::log("H264Decoder::initialize width=" + std::to_string(width) + " height=" + std::to_string(height));
     width_ = width;
     height_ = height;
 
@@ -36,6 +38,7 @@ bool H264Decoder::initialize(int width, int height) {
     codec_ctx_->flags2 |= AV_CODEC_FLAG2_FAST;  // Allow faster decoding
 
     if (avcodec_open2(codec_ctx_, codec, nullptr) < 0) {
+        Logger::log("H264Decoder avcodec_open2 failed");
         avcodec_free_context(&codec_ctx_);
         codec_ctx_ = nullptr;
         return false;
@@ -82,6 +85,7 @@ VideoFramePtr H264Decoder::decodeAnnexB(const uint8_t* data, size_t len, int64_t
     av_packet_->size = static_cast<int>(len);
     av_packet_->pts = pts;
 
+    Logger::log("decodeAnnexB len=" + std::to_string(len) + " pts=" + std::to_string(pts));
     int ret = avcodec_send_packet(codec_ctx_, av_packet_);
     if (ret < 0) {
         return nullptr;
@@ -99,6 +103,7 @@ VideoFramePtr H264Decoder::decodeAnnexB(const uint8_t* data, size_t len, int64_t
         auto frame = convertAvFrame(av_frame_);
         av_frame_unref(av_frame_);
         if (frame) {
+            Logger::log("decoder output frame size=" + std::to_string(frame->width_) + "x" + std::to_string(frame->height_));
             frame->pts_ = pts;
             return frame;
         }
@@ -158,3 +163,5 @@ void H264Decoder::shutdown() {
 }
 
 }  // namespace lancast
+
+

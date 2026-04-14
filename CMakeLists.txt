@@ -54,6 +54,7 @@ set(COMMON_SOURCES
     src/Common/RtpPacket.cpp
     src/Common/RoomInfo.cpp
     src/Common/CircularBuffer.cpp
+    src/Common/Logger.cpp
 )
 
 set(CORE_SOURCES
@@ -131,3 +132,4 @@ target_link_libraries(lancast
     Qt6::Network
     lancast_lib
 )
+

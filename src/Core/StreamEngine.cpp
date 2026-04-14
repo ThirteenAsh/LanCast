@@ -1,10 +1,12 @@
 #include "Core/StreamEngine.h"
+#include "Common/Logger.h"
 #include <chrono>
 #include <random>
 
 namespace lancast {
 
 StreamEngine::StreamEngine() {
+    Logger::log("StreamEngine ctor");
     discovery_ = std::make_shared<RoomDiscovery>();
     discovery_->startDiscovery();
 }
@@ -25,6 +27,7 @@ bool StreamEngine::startHost(const std::string& room_name, int width, int height
 
     // Initialize capture
     capturer_ = std::make_shared<DesktopCapturer>();
+    Logger::log("startHost requested room=" + room_name);
     if (!capturer_->initialize(width_, height_, fps_)) {
         emit error("Failed to initialize screen capture");
         return false;
@@ -48,6 +51,7 @@ bool StreamEngine::startHost(const std::string& room_name, int width, int height
 
     // Initialize network as sender
     network_ = std::make_shared<NetworkManager>();
+    Logger::log("host stream port=" + std::to_string(stream_port));
     if (!network_->initSender("255.255.255.255", stream_port)) {
         emit error("Failed to initialize network sender");
         encoder_.reset();
@@ -76,6 +80,7 @@ bool StreamEngine::startHost(const std::string& room_name, int width, int height
     }
 
     // Start threads
+    Logger::log("host started capture=" + std::to_string(width_) + "x" + std::to_string(height_) + " fps=" + std::to_string(fps_));
     running_ = true;
     mode_ = Mode::HOST;
     startCaptureThreads();
@@ -84,6 +89,7 @@ bool StreamEngine::startHost(const std::string& room_name, int width, int height
 }
 
 void StreamEngine::stopHost() {
+    Logger::log("stopHost");
     if (mode_ != Mode::HOST) return;
 
     running_ = false;
@@ -102,6 +108,7 @@ void StreamEngine::stopHost() {
 }
 
 bool StreamEngine::startViewer(const RoomInfo& room) {
+    Logger::log("startViewer room=" + room.room_id_ + " ip=" + room.host_ip_ + " port=" + std::to_string(room.stream_port_));
     if (mode_ != Mode::NONE) {
         stopViewer();
     }
@@ -124,6 +131,7 @@ bool StreamEngine::startViewer(const RoomInfo& room) {
         return false;
     }
 
+    Logger::log("viewer started");
     running_ = true;
     mode_ = Mode::VIEWER;
     startDecodeThreads();
@@ -132,6 +140,7 @@ bool StreamEngine::startViewer(const RoomInfo& room) {
 }
 
 void StreamEngine::stopViewer() {
+    Logger::log("stopViewer");
     if (mode_ != Mode::VIEWER) return;
 
     running_ = false;
@@ -223,12 +232,14 @@ void StreamEngine::encodeThreadFunc() {
 }
 
 void StreamEngine::decodeThreadFunc() {
+    uint64_t decode_loop_count = 0;
     while (running_) {
         if (network_) {
             auto encoded = network_->tryGetFrame();
             if (encoded && decoder_) {
                 auto frame = decoder_->decode(encoded);
                 if (frame) {
+                    if ((++decode_loop_count % 30) == 1) Logger::log("decoded frame pts=" + std::to_string(frame->pts_) + " size=" + std::to_string(frame->width_) + "x" + std::to_string(frame->height_));
                     emit newVideoFrame(frame);
                 }
             }
@@ -252,3 +263,6 @@ void StreamEngine::setFramerate(int fps) {
 }
 
 }  // namespace lancast
+
+
+

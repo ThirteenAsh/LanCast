@@ -81,3 +81,4 @@ ui_*.h
 .DS_Store
 Thumbs.db
 
+build_project.bat

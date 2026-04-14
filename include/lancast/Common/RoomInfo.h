@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 #include <memory>
+#include <QMetaType>
 
 namespace lancast {
 
@@ -24,11 +25,12 @@ struct RoomInfo {
     // Deserialize from bytes
     static RoomInfo deserialize(const uint8_t* data, size_t len);
 
-    static constexpr size_t SERIALIZED_SIZE = 1 + 1 + 16 + 64 + 32 + 4 + 2 + 1;
-    // VER(1) + TTL(1) + MSG_TYPE(1) + RoomID(16) + RoomName(64) + HostName(32) + IP(4) + Port(2) + Ver(1)
+    static constexpr size_t SERIALIZED_SIZE = 16 + 64 + 32 + 4 + 2 + 1;
+    // RoomID(16) + RoomName(64) + HostName(32) + IP(4) + Port(2) + Ver(1)
 };
 
 using RoomInfoPtr = std::shared_ptr<RoomInfo>;
+using RoomInfoList = std::vector<RoomInfo>;
 
 // Discovery message types
 enum class DiscoveryMsgType : uint8_t {
@@ -49,3 +51,8 @@ struct DiscoveryHeader {
 };
 
 }  // namespace lancast
+
+Q_DECLARE_METATYPE(lancast::RoomInfo)
+Q_DECLARE_METATYPE(lancast::RoomInfoList)
+Q_DECLARE_METATYPE(std::string)
+

@@ -1,4 +1,5 @@
-#include "Network/RtpDepacketizer.h"
+﻿#include "Network/RtpDepacketizer.h"
+#include "Common/Logger.h"
 #include <cstring>
 
 namespace lancast {
@@ -14,7 +15,7 @@ EncodedFramePtr RtpDepacketizer::depacketize(const RtpPacketPtr& packet) {
 
     if (packet->payload().empty()) return nullptr;
 
-    uint8_t payload_type = packet->payload()[0];
+    uint8_t payload_type = packet->payload()[0] & 0x1F;
 
     if (payload_type >= 1 && payload_type <= 23) {
         // Single NAL unit packet
@@ -91,6 +92,7 @@ bool RtpDepacketizer::processFuA(const RtpPacketPtr& packet) {
     if (nal_type == 5) current_frame_keyframe_ = true;
 
     if (start) {
+        Logger::log("FU-A start seq=" + std::to_string(packet->seqNum()) + " ts=" + std::to_string(packet->timestamp()) + " nal=" + std::to_string(nal_type));
         // Start of fragment - reset buffer
         fu_a_buffer_.data.clear();
         fu_a_buffer_.nal_type = nal_type;
@@ -107,6 +109,7 @@ bool RtpDepacketizer::processFuA(const RtpPacketPtr& packet) {
                               payload.begin() + 2, payload.end());
 
     if (end) {
+        Logger::log("FU-A end seq=" + std::to_string(packet->seqNum()) + " ts=" + std::to_string(packet->timestamp()));
         fu_a_buffer_.ended = true;
         fu_a_buffer_.end_seq = packet->seqNum();
     }
@@ -190,6 +193,7 @@ EncodedFramePtr RtpDepacketizer::completeFrame() {
     }
 
     auto frame = std::make_shared<EncodedFrame>();
+    Logger::log("completeFrame bytes=" + std::to_string(current_frame_data_.size()) + " key=" + std::to_string(current_frame_keyframe_) + " ts=" + std::to_string(current_timestamp_));
     frame->data_ = std::move(current_frame_data_);
     frame->key_frame_ = current_frame_keyframe_;
     frame->pts_ = current_timestamp_ * 1000 / 90;  // Convert 90kHz to microseconds
@@ -223,3 +227,6 @@ void RtpDepacketizer::reset() {
 }
 
 }  // namespace lancast
+
+
+

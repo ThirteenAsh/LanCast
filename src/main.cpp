@@ -13,6 +13,7 @@
 #include <QTabWidget>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QMetaType>
 
 // Initialize Winsock
 #include <winsock2.h>
@@ -22,6 +23,7 @@
 #include "Core/StreamEngine.h"
 #include "Render/VideoWidget.h"
 #include "Common/RoomInfo.h"
+#include "Common/Logger.h"
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -58,6 +60,11 @@ public:
         , actionExit_(new QAction("退出", this))
     {
         setupUi();
+
+        qRegisterMetaType<lancast::VideoFramePtr>("lancast::VideoFramePtr");
+        qRegisterMetaType<lancast::RoomInfo>("lancast::RoomInfo");
+        qRegisterMetaType<lancast::RoomInfoList>("std::vector<lancast::RoomInfo>");
+        qRegisterMetaType<std::string>("std::string");
 
         // Initialize StreamEngine
         engine_ = std::make_shared<lancast::StreamEngine>();
@@ -143,7 +150,8 @@ private:
             this,
             [this](const lancast::VideoFramePtr& frame) {
                     videoWidget_->displayFrame(frame);
-                });
+                },
+            Qt::DirectConnection);
     }
 
 private slots:
@@ -289,6 +297,11 @@ int main(int argc, char* argv[]) {
     WSAStartup(MAKEWORD(2, 2), &wsaData);
 
     QApplication app(argc, argv);
+
+    QString logDir = QCoreApplication::applicationDirPath() + "/logs";
+    QString logPath = logDir + QString("/lancast-%1.log").arg(static_cast<qulonglong>(GetCurrentProcessId()));
+    lancast::Logger::setLogFile(logPath.toStdString());
+    lancast::Logger::log(std::string("process started, log file=") + logPath.toStdString());
     app.setApplicationName("LanCast");
     app.setApplicationVersion("1.0.0");
 

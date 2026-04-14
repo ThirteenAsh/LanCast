@@ -1,5 +1,6 @@
 #include "Common/RoomInfo.h"
 #include <cstring>
+#include <algorithm>
 
 namespace lancast {
 
@@ -7,17 +8,9 @@ std::vector<uint8_t> RoomInfo::serialize() const {
     std::vector<uint8_t> buf(SERIALIZED_SIZE, 0);
     size_t offset = 0;
 
-    // VER (1)
-    buf[offset++] = DiscoveryHeader::CURRENT_VERSION;
-    // TTL (1)
-    buf[offset++] = DiscoveryHeader::DEFAULT_TTL;
-    // MSG_TYPE (1)
-    buf[offset++] = static_cast<uint8_t>(DiscoveryMsgType::ADVERTISEMENT);
 
     // RoomID (16 bytes)
-    if (room_id_.size() >= 16) {
-        memcpy(buf.data() + offset, room_id_.data(), 16);
-    }
+    memcpy(buf.data() + offset, room_id_.data(), std::min<size_t>(room_id_.size(), 16));
     offset += 16;
 
     // RoomName (64 bytes)
@@ -63,8 +56,6 @@ RoomInfo RoomInfo::deserialize(const uint8_t* data, size_t len) {
 
     if (len < SERIALIZED_SIZE) return info;
 
-    // Skip VER, TTL, MSG_TYPE
-    offset += 3;
 
     // RoomID (16 bytes)
     info.room_id_.assign(reinterpret_cast<const char*>(data + offset), 16);
@@ -99,3 +90,4 @@ RoomInfo RoomInfo::deserialize(const uint8_t* data, size_t len) {
 }
 
 }  // namespace lancast
+

@@ -1,4 +1,5 @@
 #include "Network/NetworkManager.h"
+#include "Common/Logger.h"
 #include <chrono>
 #include <random>
 
@@ -21,6 +22,7 @@ NetworkManager::~NetworkManager() {
 }
 
 bool NetworkManager::initSender(const std::string& target_ip, uint16_t target_port) {
+    Logger::log("NetworkManager::initSender ip=" + target_ip + ":" + std::to_string(target_port));
     target_ip_ = target_ip;
     target_port_ = target_port;
     loopback_target_port_ = target_port;
@@ -43,6 +45,7 @@ bool NetworkManager::initSender(const std::string& target_ip, uint16_t target_po
 }
 
 bool NetworkManager::initReceiver(uint16_t local_port) {
+    Logger::log("NetworkManager::initReceiver port=" + std::to_string(local_port));
     local_port_ = local_port;
 
     recv_socket_ = std::make_shared<UdpSocket>();
@@ -62,6 +65,7 @@ bool NetworkManager::initReceiver(uint16_t local_port) {
 }
 
 bool NetworkManager::sendFrame(const EncodedFramePtr& frame) {
+    static uint64_t sent_frames = 0;
     if (mode_ != Mode::SENDER || !packetizer_ || !send_socket_) {
         return false;
     }
@@ -71,6 +75,7 @@ bool NetworkManager::sendFrame(const EncodedFramePtr& frame) {
     packetizer_->setTimestamp(timestamp_);
 
     auto packets = packetizer_->packetize(frame);
+    if ((++sent_frames % 30) == 1) Logger::log("sendFrame bytes=" + std::to_string(frame ? frame->data_.size() : 0) + " packets=" + std::to_string(packets.size()) + " key=" + std::to_string(frame && frame->key_frame_));
     for (auto& packet : packets) {
         auto bytes = packet->build();
         send_socket_->sendTo(bytes, target_ip_, target_port_);
@@ -84,6 +89,7 @@ bool NetworkManager::sendFrame(const EncodedFramePtr& frame) {
 }
 
 void NetworkManager::receiveThreadFunc() {
+    uint64_t packet_count = 0;
     std::vector<uint8_t> buffer;
     std::string src_ip;
     uint16_t src_port;
@@ -94,6 +100,7 @@ void NetworkManager::receiveThreadFunc() {
 
         if (result > 0 && depacketizer_) {
             auto packet = RtpPacket::parse(buffer.data(), buffer.size());
+            if ((++packet_count % 100) == 1) Logger::log("recv RTP bytes=" + std::to_string(buffer.size()) + " from=" + src_ip + ":" + std::to_string(src_port));
             if (packet) {
                 auto frame = depacketizer_->depacketize(packet);
                 if (frame) {
@@ -128,3 +135,5 @@ void NetworkManager::shutdown() {
 }
 
 }  // namespace lancast
+
+

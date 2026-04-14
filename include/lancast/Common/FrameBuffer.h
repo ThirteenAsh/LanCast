@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <vector>
+#include <QMetaType>
 
 namespace lancast {
 
@@ -47,3 +48,6 @@ struct EncodedFrame {
 using EncodedFramePtr = std::shared_ptr<EncodedFrame>;
 
 }  // namespace lancast
+
+Q_DECLARE_METATYPE(lancast::VideoFramePtr)
+

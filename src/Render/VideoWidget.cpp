@@ -1,4 +1,5 @@
 #include "Render/VideoWidget.h"
+#include "Common/Logger.h"
 #include "Common/FrameBuffer.h"
 #include <QPainter>
 #include <QResizeEvent>
@@ -25,6 +26,7 @@ VideoWidget::~VideoWidget() {
 }
 
 void VideoWidget::displayFrame(const VideoFramePtr& frame) {
+    static uint64_t received_frames = 0;
     if (!frame) {
         return;
     }
@@ -32,6 +34,7 @@ void VideoWidget::displayFrame(const VideoFramePtr& frame) {
     // Keep only the newest frame to avoid unbounded event backlog memory growth.
     std::lock_guard<std::mutex> lock(frame_mutex_);
     pending_frame_ = frame;
+    if ((++received_frames % 30) == 1) Logger::log("VideoWidget::displayFrame pts=" + std::to_string(frame->pts_) + " size=" + std::to_string(frame->width_) + "x" + std::to_string(frame->height_));
 }
 
 void VideoWidget::clear() {
@@ -69,6 +72,7 @@ void VideoWidget::resizeEvent(QResizeEvent* event) {
 }
 
 void VideoWidget::updateImage() {
+    static uint64_t painted_frames = 0;
     VideoFramePtr frame;
     {
         std::lock_guard<std::mutex> lock(frame_mutex_);
@@ -85,6 +89,7 @@ void VideoWidget::updateImage() {
 
         convertYuv420ToRgbImage(frame, current_image_);
         scaled_image_ = current_image_.scaled(size(), Qt::KeepAspectRatio, Qt::FastTransformation);
+        if ((++painted_frames % 30) == 1) Logger::log("VideoWidget::updateImage painted size=" + std::to_string(display_width_) + "x" + std::to_string(display_height_));
     }
 
     if (!scaled_image_.isNull()) {
@@ -140,3 +145,6 @@ void VideoWidget::convertYuv420ToRgbImage(const VideoFramePtr& frame, QImage& ou
 }
 
 }  // namespace lancast
+
+
+
