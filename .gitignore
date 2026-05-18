@@ -82,3 +82,6 @@ ui_*.h
 Thumbs.db
 
 build_project.bat
+start.bat
+package_release.bat
+release.zip

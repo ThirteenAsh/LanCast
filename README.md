@@ -7,7 +7,7 @@
 - **创建房间**: 用户可创建房间并共享自己的屏幕
 - **自动发现**: 局域网内其他客户端通过 UDP 广播自动发现房间
 - **实时观看**: 加入房间后实时观看屏幕内容
-- **低延迟**: 目标端到端延迟 < 200ms
+- **低延迟**: 目标端到端延迟 < 20ms
 
 ## 技术架构
 
@@ -268,23 +268,3 @@ Timestamp: 90000 / fps 增量 (30fps = 3000/frame)
 ## 许可证
 
 MIT License
-
-## Runtime Defaults (Updated)
-
-Current default runtime parameters in code:
-
-- Resolution: `1920x1080`
-- FPS: `30`
-- Bitrate: `8000 kbps`
-- H.264 profile: `high`
-- H.264 preset: `veryfast`
-- Tune: `zerolatency`
-- GOP/keyframe interval: `fps/2` (about `0.5s` at 30 fps)
-- RTP payload type: `96`
-
-Recent behavior fixes:
-
-- Fixed RTP depacketizer NAL type parsing (`payload[0] & 0x1F`), which previously dropped valid packets and caused black screen.
-- Fixed room info serialization size/header mismatch to avoid corrupted discovery payload parsing.
-- Disabled duplicated loopback send path in sender to prevent duplicate-frame stream corruption when host/viewer run on the same machine.
-- Switched viewer scaling from fast to smooth transformation for better visual quality.

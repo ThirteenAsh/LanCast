@@ -125,7 +125,7 @@ bool StreamEngine::startViewer(const RoomInfo& room) {
 
     // Initialize network as receiver
     network_ = std::make_shared<NetworkManager>();
-    if (!network_->initReceiver(room.stream_port_)) {
+    if (!network_->initReceiver(room.stream_port_, room.host_ip_)) {
         emit error("Failed to initialize network receiver");
         decoder_.reset();
         return false;

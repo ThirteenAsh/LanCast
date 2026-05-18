@@ -12,6 +12,7 @@
 #include <thread>
 #include <atomic>
 #include <queue>
+#include <vector>
 
 namespace lancast {
 
@@ -25,7 +26,7 @@ public:
     bool initSender(const std::string& target_ip, uint16_t target_port);
 
     // Initialize as receiver (VIEWER mode)
-    bool initReceiver(uint16_t local_port);
+    bool initReceiver(uint16_t local_port, const std::string& expected_source_ip = "");
 
     // Send encoded frame
     bool sendFrame(const EncodedFramePtr& frame);
@@ -53,7 +54,9 @@ private:
 
     Mode mode_ = Mode::NONE;
     std::string target_ip_;
+    std::vector<std::string> target_ips_;
     uint16_t target_port_ = 0;
+    std::string expected_source_ip_;
     std::string loopback_target_ip_ = "127.0.0.1";
     uint16_t loopback_target_port_ = 0;
     uint16_t local_port_ = 0;
