@@ -9,6 +9,7 @@
 #include <atomic>
 #include <map>
 #include <functional>
+#include <mutex>
 
 namespace lancast {
 
@@ -17,6 +18,7 @@ namespace lancast {
 class RoomDiscovery {
 public:
     static constexpr uint16_t DISCOVERY_PORT = 45678;
+    static constexpr uint16_t DISCOVERY_PORT_MAX = 45688;
     static constexpr uint8_t  DISCOVERY_VERSION = 1;
     static constexpr uint8_t  DEFAULT_TTL = 5;
     static constexpr int      ADVERTISEMENT_INTERVAL_MS = 1000;
@@ -54,6 +56,9 @@ public:
     // Get our own broadcast info (when broadcasting)
     RoomInfo ourRoomInfo() const { return our_info_; }
 
+    // Get the local UDP port currently used for discovery.
+    uint16_t discoveryPort() const { return discovery_port_; }
+
 private:
     bool openDiscoverySocket();
     void discoveryThreadFunc();
@@ -62,6 +67,7 @@ private:
 
     // Socket for discovery
     int socket_ = -1;
+    uint16_t discovery_port_ = DISCOVERY_PORT;
 
     // Broadcast thread
     std::thread discovery_thread_;

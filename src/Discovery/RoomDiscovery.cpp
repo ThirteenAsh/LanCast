@@ -272,6 +272,16 @@ bool sendDiscoveryPacket(SOCKET socket, const uint8_t* data, size_t len, uint16_
                   reinterpret_cast<sockaddr*>(&dest), sizeof(dest)) == static_cast<int>(len);
 }
 
+bool sendDiscoveryPacketToDiscoveryPorts(SOCKET socket, const uint8_t* data, size_t len) {
+    bool sent = false;
+    for (uint16_t port = RoomDiscovery::DISCOVERY_PORT;
+         port <= RoomDiscovery::DISCOVERY_PORT_MAX;
+         ++port) {
+        sent = sendDiscoveryPacket(socket, data, len, port) || sent;
+    }
+    return sent;
+}
+
 }
 
 RoomDiscovery::RoomDiscovery() = default;
@@ -292,21 +302,30 @@ bool RoomDiscovery::openDiscoverySocket() {
 
     BOOL opt = TRUE;
     setsockopt(socket_, SOL_SOCKET, SO_BROADCAST, (const char*)&opt, sizeof(opt));
-    setsockopt(socket_, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
+    setsockopt(socket_, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (const char*)&opt, sizeof(opt));
 
     sockaddr_in bind_addr;
     memset(&bind_addr, 0, sizeof(bind_addr));
     bind_addr.sin_family = AF_INET;
-    bind_addr.sin_port = htons(DISCOVERY_PORT);
     bind_addr.sin_addr.s_addr = INADDR_ANY;
 
-    if (::bind(socket_, (sockaddr*)&bind_addr, sizeof(bind_addr)) < 0) {
-        closesocket(socket_);
-        socket_ = -1;
-        return false;
+    for (uint16_t port = DISCOVERY_PORT; port <= DISCOVERY_PORT_MAX; ++port) {
+        bind_addr.sin_port = htons(port);
+        if (::bind(socket_, (sockaddr*)&bind_addr, sizeof(bind_addr)) == 0) {
+            discovery_port_ = port;
+            Logger::log("RoomDiscovery bound UDP port " + std::to_string(discovery_port_));
+            return true;
+        }
+
+        Logger::log("RoomDiscovery UDP port " + std::to_string(port) +
+                    " unavailable, error=" + std::to_string(WSAGetLastError()));
     }
 
-    return true;
+    closesocket(socket_);
+    socket_ = -1;
+    Logger::log("RoomDiscovery failed to bind any UDP port in range " +
+                std::to_string(DISCOVERY_PORT) + "-" + std::to_string(DISCOVERY_PORT_MAX));
+    return false;
 }
 
 bool RoomDiscovery::startDiscovery() {
@@ -323,7 +342,8 @@ bool RoomDiscovery::startDiscovery() {
     discovering_ = true;
     running_ = true;
     Logger::log("RoomDiscovery::startDiscovery endpoints=" +
-                std::to_string(enumerateDiscoveryEndpoints().size()));
+                std::to_string(enumerateDiscoveryEndpoints().size()) +
+                " port=" + std::to_string(discovery_port_));
     discovery_thread_ = std::thread(&RoomDiscovery::discoveryThreadFunc, this);
     return true;
 }
@@ -377,6 +397,7 @@ void RoomDiscovery::stopBroadcast() {
         closesocket(socket_);
         socket_ = -1;
     }
+    discovery_port_ = DISCOVERY_PORT;
 
     broadcasting_ = false;
     discovering_ = false;
@@ -392,7 +413,7 @@ void RoomDiscovery::sendQuery() {
     msg[1] = DiscoveryHeader::DEFAULT_TTL;
     msg[2] = static_cast<uint8_t>(DiscoveryMsgType::QUERY);
 
-    sendDiscoveryPacket(socket_, msg, sizeof(msg), DISCOVERY_PORT);
+    sendDiscoveryPacketToDiscoveryPorts(socket_, msg, sizeof(msg));
 }
 
 std::vector<RoomInfo> RoomDiscovery::getRooms() {
@@ -452,7 +473,7 @@ void RoomDiscovery::discoveryThreadFunc() {
                 msg[2] = static_cast<uint8_t>(DiscoveryMsgType::ADVERTISEMENT);
                 memcpy(msg + DiscoveryHeader::SIZE, serialized.data(), RoomInfo::SERIALIZED_SIZE);
 
-                sendDiscoveryPacket(socket_, msg, sizeof(msg), DISCOVERY_PORT);
+                sendDiscoveryPacketToDiscoveryPorts(socket_, msg, sizeof(msg));
 
                 last_advertisement = now;
             }
