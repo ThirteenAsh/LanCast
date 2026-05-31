@@ -14,6 +14,8 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QMetaType>
+#include <QKeyEvent>
+#include <QEvent>
 
 // Initialize Winsock
 #include <winsock2.h>
@@ -50,6 +52,7 @@ public:
         , refreshRoomsBtn_(new QPushButton("刷新房间", viewerTab_))
         , joinRoomBtn_(new QPushButton("加入房间", viewerTab_))
         , leaveRoomBtn_(new QPushButton("离开房间", viewerTab_))
+        , fullScreenBtn_(new QPushButton("全屏观看", viewerTab_))
         , roomsTreeWidget_(new QTreeWidget(viewerTab_))
         , viewerStatusLabel_(new QLabel("未连接", viewerTab_))
         // Video
@@ -109,6 +112,7 @@ private:
         viewerControlLayout_->addWidget(refreshRoomsBtn_);
         viewerControlLayout_->addWidget(joinRoomBtn_);
         viewerControlLayout_->addWidget(leaveRoomBtn_);
+        viewerControlLayout_->addWidget(fullScreenBtn_);
 
         // Tree widget columns
         QStringList headers;
@@ -116,6 +120,7 @@ private:
         roomsTreeWidget_->setHeaderLabels(headers);
         joinRoomBtn_->setEnabled(false);
         leaveRoomBtn_->setEnabled(false);
+        fullScreenBtn_->setEnabled(false);
 
         viewerLayout_->addLayout(viewerControlLayout_);
         viewerLayout_->addWidget(roomsTreeWidget_);
@@ -142,6 +147,7 @@ private:
         connect(refreshRoomsBtn_, &QPushButton::clicked, this, &MainWindow::onRefreshRooms);
         connect(joinRoomBtn_, &QPushButton::clicked, this, &MainWindow::onJoinRoom);
         connect(leaveRoomBtn_, &QPushButton::clicked, this, &MainWindow::onLeaveRoom);
+        connect(fullScreenBtn_, &QPushButton::clicked, this, &MainWindow::onToggleFullScreen);
         connect(roomsTreeWidget_, &QTreeWidget::itemSelectionChanged,
                 this, &MainWindow::onRoomSelectionChanged);
 
@@ -204,6 +210,7 @@ private slots:
                 if (engine_->startViewer(room)) {
                     joinRoomBtn_->setEnabled(false);
                     leaveRoomBtn_->setEnabled(true);
+                    fullScreenBtn_->setEnabled(true);
                     refreshRoomsBtn_->setEnabled(false);
                     viewerStatusLabel_->setText("已连接: " + QString::fromStdString(room.room_name_));
                     modeTabWidget_->setTabEnabled(0, false);
@@ -217,10 +224,20 @@ private slots:
         engine_->stopViewer();
         joinRoomBtn_->setEnabled(true);
         leaveRoomBtn_->setEnabled(false);
+        fullScreenBtn_->setEnabled(false);
         refreshRoomsBtn_->setEnabled(true);
         viewerStatusLabel_->setText("未连接");
         modeTabWidget_->setTabEnabled(0, true);
+        exitVideoFullScreen();
         videoWidget_->clear();
+    }
+
+    void onToggleFullScreen() {
+        if (fullScreenWindow_) {
+            exitVideoFullScreen();
+        } else {
+            enterVideoFullScreen();
+        }
     }
 
     void onRoomSelectionChanged() {
@@ -241,6 +258,76 @@ private slots:
     }
 
 private:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        const bool isFullScreenObject = fullScreenWindow_ &&
+            (watched == fullScreenWindow_ || watched == videoWidget_);
+        if (isFullScreenObject && event->type() == QEvent::KeyPress) {
+            auto keyEvent = static_cast<QKeyEvent*>(event);
+            if (keyEvent->key() == Qt::Key_Escape) {
+                exitVideoFullScreen();
+                return true;
+            }
+        }
+        if (watched == fullScreenWindow_ && event->type() == QEvent::Close) {
+            exitVideoFullScreen();
+            return true;
+        }
+        return QMainWindow::eventFilter(watched, event);
+    }
+
+    void keyPressEvent(QKeyEvent* event) override {
+        if (event->key() == Qt::Key_Escape && fullScreenWindow_) {
+            exitVideoFullScreen();
+            return;
+        }
+        QMainWindow::keyPressEvent(event);
+    }
+
+    void enterVideoFullScreen() {
+        if (fullScreenWindow_) {
+            return;
+        }
+
+        fullScreenWindow_ = new QWidget(nullptr);
+        fullScreenWindow_->setWindowTitle("LanCast 全屏观看");
+        fullScreenWindow_->installEventFilter(this);
+        fullScreenWindow_->setFocusPolicy(Qt::StrongFocus);
+        fullScreenWindow_->setStyleSheet("background: black;");
+
+        fullScreenLayout_ = new QVBoxLayout(fullScreenWindow_);
+        fullScreenLayout_->setContentsMargins(0, 0, 0, 0);
+        fullScreenLayout_->setSpacing(0);
+
+        verticalLayout_->removeWidget(videoWidget_);
+        videoWidget_->setParent(fullScreenWindow_);
+        videoWidget_->installEventFilter(this);
+        videoWidget_->setFocusPolicy(Qt::StrongFocus);
+        fullScreenLayout_->addWidget(videoWidget_);
+        videoWidget_->show();
+
+        fullScreenBtn_->setText("退出全屏");
+        fullScreenWindow_->showFullScreen();
+        videoWidget_->setFocus();
+    }
+
+    void exitVideoFullScreen() {
+        if (!fullScreenWindow_) {
+            return;
+        }
+
+        fullScreenWindow_->removeEventFilter(this);
+        videoWidget_->removeEventFilter(this);
+        fullScreenLayout_->removeWidget(videoWidget_);
+        videoWidget_->setParent(centralWidget_);
+        verticalLayout_->insertWidget(1, videoWidget_);
+        videoWidget_->show();
+
+        fullScreenWindow_->deleteLater();
+        fullScreenWindow_ = nullptr;
+        fullScreenLayout_ = nullptr;
+        fullScreenBtn_->setText("全屏观看");
+    }
+
     void updateRoomList(const std::vector<lancast::RoomInfo>& rooms) {
         roomsTreeWidget_->clear();
         for (const auto& room : rooms) {
@@ -276,12 +363,15 @@ private:
     QPushButton* refreshRoomsBtn_;
     QPushButton* joinRoomBtn_;
     QPushButton* leaveRoomBtn_;
+    QPushButton* fullScreenBtn_;
     QTreeWidget* roomsTreeWidget_;
     QLabel* viewerStatusLabel_;
 
     // Video
     lancast::VideoWidget* videoWidget_;
     QLabel* latencyLabel_;
+    QWidget* fullScreenWindow_ = nullptr;
+    QVBoxLayout* fullScreenLayout_ = nullptr;
 
     // Engine
     lancast::StreamEnginePtr engine_;

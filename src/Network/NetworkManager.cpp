@@ -104,17 +104,22 @@ bool NetworkManager::initSender(const std::string& target_ip, uint16_t target_po
     Logger::log("NetworkManager::initSender ip=" + target_ip + ":" + std::to_string(target_port));
     target_ip_ = target_ip;
     target_port_ = target_port;
-    target_ips_.clear();
+    {
+        std::lock_guard<std::mutex> lock(targets_mutex_);
+        target_ips_.clear();
 
-    if (target_ip == "255.255.255.255") {
-        target_ips_ = enumerateDirectedBroadcastTargets();
-        if (target_ips_.empty()) {
+        if (target_ip.empty()) {
+            // Discovery stays broadcast-based; video targets are added by JOIN.
+        } else if (target_ip == "255.255.255.255") {
+            target_ips_ = enumerateDirectedBroadcastTargets();
+            if (target_ips_.empty()) {
+                target_ips_.push_back(target_ip);
+            }
+        } else {
             target_ips_.push_back(target_ip);
         }
-    } else {
-        target_ips_.push_back(target_ip);
     }
-    Logger::log("NetworkManager::initSender targets=" + std::to_string(target_ips_.size()));
+    Logger::log("NetworkManager::initSender targets=" + std::to_string(targetCount()));
     // Do not send a second loopback copy.
     // When running host/viewer on the same machine, duplicated packets from
     // broadcast + loopback can corrupt depacketization order.
@@ -135,6 +140,36 @@ bool NetworkManager::initSender(const std::string& target_ip, uint16_t target_po
 
     mode_ = Mode::SENDER;
     return true;
+}
+
+void NetworkManager::addTargetIp(const std::string& ip) {
+    if (ip.empty()) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(targets_mutex_);
+    if (std::find(target_ips_.begin(), target_ips_.end(), ip) != target_ips_.end()) {
+        return;
+    }
+
+    target_ips_.push_back(ip);
+    Logger::log("NetworkManager added unicast target " + ip +
+                ", targets=" + std::to_string(target_ips_.size()));
+}
+
+void NetworkManager::removeTargetIp(const std::string& ip) {
+    std::lock_guard<std::mutex> lock(targets_mutex_);
+    const auto old_size = target_ips_.size();
+    target_ips_.erase(std::remove(target_ips_.begin(), target_ips_.end(), ip), target_ips_.end());
+    if (target_ips_.size() != old_size) {
+        Logger::log("NetworkManager removed unicast target " + ip +
+                    ", targets=" + std::to_string(target_ips_.size()));
+    }
+}
+
+size_t NetworkManager::targetCount() const {
+    std::lock_guard<std::mutex> lock(targets_mutex_);
+    return target_ips_.size();
 }
 
 bool NetworkManager::initReceiver(uint16_t local_port, const std::string& expected_source_ip) {
@@ -171,9 +206,17 @@ bool NetworkManager::sendFrame(const EncodedFramePtr& frame) {
 
     auto packets = packetizer_->packetize(frame);
     if ((++sent_frames % 30) == 1) Logger::log("sendFrame bytes=" + std::to_string(frame ? frame->data_.size() : 0) + " packets=" + std::to_string(packets.size()) + " key=" + std::to_string(frame && frame->key_frame_));
+    std::vector<std::string> targets;
+    {
+        std::lock_guard<std::mutex> lock(targets_mutex_);
+        targets = target_ips_;
+    }
+    if (targets.empty()) {
+        return true;
+    }
     for (auto& packet : packets) {
         auto bytes = packet->build();
-        for (const auto& target : target_ips_) {
+        for (const auto& target : targets) {
             send_socket_->sendTo(bytes, target, target_port_);
         }
     }

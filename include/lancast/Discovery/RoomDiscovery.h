@@ -40,12 +40,21 @@ public:
     // Send a discovery query (to find existing rooms)
     void sendQuery();
 
+    // Notify a host that this viewer wants to receive/stop receiving RTP.
+    void sendJoin(const RoomInfo& room);
+    void sendLeave(const RoomInfo& room);
+
     // Get list of discovered rooms
     std::vector<RoomInfo> getRooms();
 
     // Set callback for new room discovered
     using RoomDiscoveredCallback = std::function<void(const RoomInfo&)>;
     void setCallback(RoomDiscoveredCallback cb) { on_room_discovered_ = cb; }
+
+    using ViewerJoinedCallback = std::function<void(const std::string& viewer_ip)>;
+    using ViewerLeftCallback = std::function<void(const std::string& viewer_ip)>;
+    void setViewerJoinedCallback(ViewerJoinedCallback cb) { on_viewer_joined_ = cb; }
+    void setViewerLeftCallback(ViewerLeftCallback cb) { on_viewer_left_ = cb; }
 
     // Check if we're broadcasting
     bool isBroadcasting() const { return broadcasting_; }
@@ -89,6 +98,8 @@ private:
 
     // Callback
     RoomDiscoveredCallback on_room_discovered_;
+    ViewerJoinedCallback on_viewer_joined_;
+    ViewerLeftCallback on_viewer_left_;
 };
 
 using RoomDiscoveryPtr = std::shared_ptr<RoomDiscovery>;

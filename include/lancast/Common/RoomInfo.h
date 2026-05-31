@@ -36,7 +36,9 @@ using RoomInfoList = std::vector<RoomInfo>;
 enum class DiscoveryMsgType : uint8_t {
     ADVERTISEMENT = 0x01,
     QUERY         = 0x02,
-    RESPONSE      = 0x03
+    RESPONSE      = 0x03,
+    JOIN          = 0x04,
+    LEAVE         = 0x05
 };
 
 // Discovery header: VER(1) + TTL(1) + MSG_TYPE(1)

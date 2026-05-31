@@ -282,6 +282,41 @@ bool sendDiscoveryPacketToDiscoveryPorts(SOCKET socket, const uint8_t* data, siz
     return sent;
 }
 
+bool sendUnicastDiscoveryControl(SOCKET socket,
+                                 const std::string& host_ip,
+                                 DiscoveryMsgType type,
+                                 const std::string& room_id) {
+    if (socket < 0 || host_ip.empty()) {
+        return false;
+    }
+
+    uint8_t msg[DiscoveryHeader::SIZE + 16] = {};
+    msg[0] = DiscoveryHeader::CURRENT_VERSION;
+    msg[1] = DiscoveryHeader::DEFAULT_TTL;
+    msg[2] = static_cast<uint8_t>(type);
+    memcpy(msg + DiscoveryHeader::SIZE, room_id.data(), std::min<size_t>(room_id.size(), 16));
+
+    bool sent = false;
+    for (uint16_t port = RoomDiscovery::DISCOVERY_PORT;
+         port <= RoomDiscovery::DISCOVERY_PORT_MAX;
+         ++port) {
+        sockaddr_in dest{};
+        dest.sin_family = AF_INET;
+        dest.sin_port = htons(port);
+        if (inet_pton(AF_INET, host_ip.c_str(), &dest.sin_addr) != 1) {
+            continue;
+        }
+
+        sent = sendto(socket,
+                      reinterpret_cast<const char*>(msg),
+                      static_cast<int>(sizeof(msg)),
+                      0,
+                      reinterpret_cast<sockaddr*>(&dest),
+                      sizeof(dest)) == static_cast<int>(sizeof(msg)) || sent;
+    }
+    return sent;
+}
+
 }
 
 RoomDiscovery::RoomDiscovery() = default;
@@ -416,6 +451,22 @@ void RoomDiscovery::sendQuery() {
     sendDiscoveryPacketToDiscoveryPorts(socket_, msg, sizeof(msg));
 }
 
+void RoomDiscovery::sendJoin(const RoomInfo& room) {
+    if (socket_ < 0) return;
+
+    if (sendUnicastDiscoveryControl(socket_, room.host_ip_, DiscoveryMsgType::JOIN, room.room_id_)) {
+        Logger::log("RoomDiscovery sent JOIN room=" + room.room_id_ + " host=" + room.host_ip_);
+    }
+}
+
+void RoomDiscovery::sendLeave(const RoomInfo& room) {
+    if (socket_ < 0) return;
+
+    if (sendUnicastDiscoveryControl(socket_, room.host_ip_, DiscoveryMsgType::LEAVE, room.room_id_)) {
+        Logger::log("RoomDiscovery sent LEAVE room=" + room.room_id_ + " host=" + room.host_ip_);
+    }
+}
+
 std::vector<RoomInfo> RoomDiscovery::getRooms() {
     std::lock_guard<std::mutex> lock(rooms_mutex_);
 
@@ -546,6 +597,31 @@ void RoomDiscovery::processReceivedPacket(const uint8_t* data, size_t len,
         if (inet_pton(AF_INET, src_ip.c_str(), &dest.sin_addr) == 1) {
             sendto(socket_, (const char*)msg, sizeof(msg), 0,
                    (sockaddr*)&dest, sizeof(dest));
+        }
+    } else if (header.msg_type_ == DiscoveryMsgType::JOIN ||
+               header.msg_type_ == DiscoveryMsgType::LEAVE) {
+        if (!broadcasting_ || len < DiscoveryHeader::SIZE + 16) {
+            return;
+        }
+
+        std::string room_id(reinterpret_cast<const char*>(data + DiscoveryHeader::SIZE), 16);
+        room_id = room_id.c_str();
+        if (room_id != our_info_.room_id_) {
+            return;
+        }
+
+        if (header.msg_type_ == DiscoveryMsgType::JOIN) {
+            Logger::log("RoomDiscovery received JOIN from " + src_ip +
+                        " room=" + room_id);
+            if (on_viewer_joined_) {
+                on_viewer_joined_(src_ip);
+            }
+        } else {
+            Logger::log("RoomDiscovery received LEAVE from " + src_ip +
+                        " room=" + room_id);
+            if (on_viewer_left_) {
+                on_viewer_left_(src_ip);
+            }
         }
     }
 }

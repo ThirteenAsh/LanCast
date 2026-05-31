@@ -13,6 +13,7 @@
 #include <atomic>
 #include <queue>
 #include <vector>
+#include <mutex>
 
 namespace lancast {
 
@@ -30,6 +31,11 @@ public:
 
     // Send encoded frame
     bool sendFrame(const EncodedFramePtr& frame);
+
+    // Manage unicast RTP targets for HOST mode.
+    void addTargetIp(const std::string& ip);
+    void removeTargetIp(const std::string& ip);
+    size_t targetCount() const;
 
     // Receive RTP packet (call from receive thread)
     void receiveThreadFunc();
@@ -55,6 +61,7 @@ private:
     Mode mode_ = Mode::NONE;
     std::string target_ip_;
     std::vector<std::string> target_ips_;
+    mutable std::mutex targets_mutex_;
     uint16_t target_port_ = 0;
     std::string expected_source_ip_;
     std::string loopback_target_ip_ = "127.0.0.1";

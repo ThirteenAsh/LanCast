@@ -72,6 +72,9 @@ private:
     uint16_t last_seq_num_ = 0;
     bool has_frame_ = false;
     bool current_frame_keyframe_ = false;
+    bool have_last_seq_ = false;
+    bool drop_until_marker_ = false;
+    bool wait_for_keyframe_ = false;
 };
 
 using RtpDepacketizerPtr = std::shared_ptr<RtpDepacketizer>;

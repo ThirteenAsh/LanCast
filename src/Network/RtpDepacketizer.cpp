@@ -11,9 +11,33 @@ RtpDepacketizer::RtpDepacketizer()
 EncodedFramePtr RtpDepacketizer::depacketize(const RtpPacketPtr& packet) {
     if (!packet) return nullptr;
 
-    last_seq_num_ = packet->seqNum();
-
     if (packet->payload().empty()) return nullptr;
+
+    const uint16_t seq = packet->seqNum();
+    if (have_last_seq_) {
+        const uint16_t expected_seq = static_cast<uint16_t>(last_seq_num_ + 1);
+        if (seq != expected_seq) {
+            Logger::log("RTP sequence gap last=" + std::to_string(last_seq_num_) +
+                        " got=" + std::to_string(seq) +
+                        " expected=" + std::to_string(expected_seq));
+            current_frame_data_.clear();
+            current_frame_keyframe_ = false;
+            has_frame_ = false;
+            fu_a_buffer_.reset();
+            drop_until_marker_ = true;
+            wait_for_keyframe_ = true;
+        }
+    }
+
+    last_seq_num_ = seq;
+    have_last_seq_ = true;
+
+    if (drop_until_marker_) {
+        if (packet->marker()) {
+            drop_until_marker_ = false;
+        }
+        return nullptr;
+    }
 
     uint8_t payload_type = packet->payload()[0] & 0x1F;
 
@@ -101,6 +125,7 @@ bool RtpDepacketizer::processFuA(const RtpPacketPtr& packet) {
     }
 
     if (!fu_a_buffer_.started) {
+        drop_until_marker_ = true;
         return false;  // Received middle without start
     }
 
@@ -192,12 +217,24 @@ EncodedFramePtr RtpDepacketizer::completeFrame() {
         return nullptr;
     }
 
+    if (wait_for_keyframe_ && !current_frame_keyframe_) {
+        Logger::log("drop non-key frame while waiting for keyframe after RTP loss ts=" +
+                    std::to_string(current_timestamp_));
+        current_frame_data_.clear();
+        current_frame_keyframe_ = false;
+        has_frame_ = false;
+        return nullptr;
+    }
+
     auto frame = std::make_shared<EncodedFrame>();
     Logger::log("completeFrame bytes=" + std::to_string(current_frame_data_.size()) + " key=" + std::to_string(current_frame_keyframe_) + " ts=" + std::to_string(current_timestamp_));
     frame->data_ = std::move(current_frame_data_);
     frame->key_frame_ = current_frame_keyframe_;
     frame->pts_ = current_timestamp_ * 1000 / 90;  // Convert 90kHz to microseconds
 
+    if (current_frame_keyframe_) {
+        wait_for_keyframe_ = false;
+    }
     current_frame_data_.clear();
     current_frame_keyframe_ = false;
     has_frame_ = false;
@@ -221,8 +258,12 @@ EncodedFramePtr RtpDepacketizer::getFrame(int timeout_ms) {
 void RtpDepacketizer::reset() {
     current_frame_data_.clear();
     current_timestamp_ = 0;
+    last_seq_num_ = 0;
     has_frame_ = false;
     current_frame_keyframe_ = false;
+    have_last_seq_ = false;
+    drop_until_marker_ = false;
+    wait_for_keyframe_ = false;
     fu_a_buffer_ = {};
 }
 

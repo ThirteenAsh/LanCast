@@ -52,7 +52,7 @@ bool StreamEngine::startHost(const std::string& room_name, int width, int height
     // Initialize network as sender
     network_ = std::make_shared<NetworkManager>();
     Logger::log("host stream port=" + std::to_string(stream_port));
-    if (!network_->initSender("255.255.255.255", stream_port)) {
+    if (!network_->initSender("", stream_port)) {
         emit error("Failed to initialize network sender");
         encoder_.reset();
         capturer_.reset();
@@ -72,8 +72,20 @@ bool StreamEngine::startHost(const std::string& room_name, int width, int height
     snprintf(room_id_buf, sizeof(room_id_buf), "%08x", dist(gen));
     std::string room_id = room_id_buf;
 
+    discovery_->setViewerJoinedCallback([this](const std::string& viewer_ip) {
+        if (network_) {
+            network_->addTargetIp(viewer_ip);
+        }
+    });
+    discovery_->setViewerLeftCallback([this](const std::string& viewer_ip) {
+        if (network_) {
+            network_->removeTargetIp(viewer_ip);
+        }
+    });
     if (!discovery_->startBroadcast(room_id, room_name, stream_port)) {
         emit error("Failed to start room discovery");
+        discovery_->setViewerJoinedCallback(nullptr);
+        discovery_->setViewerLeftCallback(nullptr);
         encoder_.reset();
         capturer_.reset();
         return false;
@@ -96,6 +108,8 @@ void StreamEngine::stopHost() {
     stopCaptureThreads();
 
     if (discovery_) {
+        discovery_->setViewerJoinedCallback(nullptr);
+        discovery_->setViewerLeftCallback(nullptr);
         discovery_->stopBroadcast();
         discovery_->startDiscovery();
     }
@@ -130,6 +144,9 @@ bool StreamEngine::startViewer(const RoomInfo& room) {
         decoder_.reset();
         return false;
     }
+    if (discovery_) {
+        discovery_->sendJoin(room);
+    }
 
     Logger::log("viewer started");
     running_ = true;
@@ -144,6 +161,9 @@ void StreamEngine::stopViewer() {
     if (mode_ != Mode::VIEWER) return;
 
     running_ = false;
+    if (discovery_) {
+        discovery_->sendLeave(target_room_);
+    }
     stopDecodeThreads();
 
     network_.reset();
